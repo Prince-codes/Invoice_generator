@@ -86,24 +86,27 @@
 
     <!-- Modal for previous bills -->
     <div id="previousBillsModal" class="modal">
-        <div class="modal-content">
-            <span class="close" id="closePreviousModal">&times;</span>
-            <h2>Previous Bills</h2>
-            <table id="previousBillsTable">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Customer</th>
-                        <th>Month-Year</th>
-                        <th>Total</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <!-- Filled dynamically -->
-                </tbody>
-            </table>
-        </div>
+    <div class="modal-content">
+      <header style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;color:var(--accent);font-size:20px;font-weight:700;">Previous Bills</h3>
+        <button class="close" id="closePreviousModal" title="Close">&times;</button>
+      </header>
+      <div class="modal-body" style="margin-top:18px;display:flex;justify-content:center;align-items:center;">
+        <table id="previousBillsTable" style="width:600px;max-width:100%;margin:0 auto;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px #eee;background:rgba(30,136,229,0.06);">
+          <thead>
+            <tr style="background:var(--glass);color:var(--accent);">
+              <th style="text-align:center;">ID</th>
+              <th style="text-align:center;">Customer</th>
+              <th style="text-align:center;">Month-Year</th>
+              <th style="text-align:center;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Filled dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
     </div>
 
   </main>

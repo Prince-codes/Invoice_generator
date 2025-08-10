@@ -1,3 +1,27 @@
+/* Make previous bills modal's table scrollable vertically */
+#previousBillsTable {
+    display: block;
+    max-height: 400px;
+    overflow-y: auto;
+    width: 100%;
+}
+
+#previousBillsTable thead, #previousBillsTable tbody, #previousBillsTable tr {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+
+#previousBillsTable thead {
+    width: 100%;
+}
+
+#previousBillsTable tbody {
+    display: block;
+    max-height: 350px;
+    overflow-y: auto;
+    width: 100%;
+}
 /* Responsive mobile preview */
 @media (max-width: 480px) {
     .login-container {

@@ -138,10 +138,13 @@ function numberToWords(num) {
   saveBtn.addEventListener('click', async () => {
     const cust = customerInput.value.trim();
     if (!cust) return alert('Enter customer name first.');
-    const m = parseInt(monthSelect.value)-1;
-    const y = parseInt(yearSelect.value);
-    const daysInMonth = new Date(y, m+1, 0).getDate();
-    const monthFirstDay = new Date(y, m, 1).toISOString().slice(0,10);
+  const m = parseInt(monthSelect.value); // 1-based month
+  const y = parseInt(yearSelect.value);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const monthFirstDay = `${y}-${String(m).padStart(2,'0')}-01`;
+  // Get correct month name for print preview
+  const monthsArr = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const selectedMonthText = `${monthsArr[m-1]} ${y}`;
 
     // collect daily data
     const inputs = modal.querySelectorAll('input[type="text"]');
@@ -187,7 +190,8 @@ function numberToWords(num) {
       const data = await resp.json();
       if (data.success) {
         modal.classList.remove('show');
-        openPrintWindow({ invoiceId: data.insertId || data.invoiceId || null, customer: cust, monthYear: monthFirstDay, daily: dailyRows, totals: { t1, t2, grand: (t1 + t2) }, words: payload.totalWords });
+        // Pass selectedMonthText for correct month name in print preview
+        openPrintWindow({ invoiceId: data.insertId || data.invoiceId || null, customer: cust, monthYear: selectedMonthText, daily: dailyRows, totals: { t1, t2, grand: (t1 + t2) }, words: payload.totalWords });
       } else {
         alert(data.message || 'Save failed');
       }
@@ -200,17 +204,13 @@ function numberToWords(num) {
   // helper to open print-ready window and trigger print (uses local data)
   function openPrintWindow({ invoiceId=null, customer, monthYear, daily, totals, words }) {
     // prepare HTML string
-    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const mdate = new Date(monthYear);
-    const monthText = `${months[mdate.getMonth()]} ${mdate.getFullYear()}`;
-
+    // monthYear is now always the correct month name string
+    const monthText = monthYear;
     const win = window.open('', '_blank');
     const html = buildPrintHTML({ customer, monthText, daily, totals, words });
     win.document.open();
     win.document.write(html);
     win.document.close();
-
-    // give browser a moment to render then call print
     setTimeout(() => {
       try { win.focus(); win.print(); } catch (e) { console.warn('Print failed', e); }
     }, 600);
@@ -224,6 +224,23 @@ function numberToWords(num) {
     const t2Sum = totals.t2.toFixed(2);
     const grand = totals.grand.toFixed(2);
 
+    // Fix: Always show correct month name in invoice preview
+    let previewMonthText = monthText;
+    const monthsArr = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    if (typeof monthText === 'string' && monthText.match(/^\d{4}-\d{2}-\d{2}/)) {
+      // YYYY-MM-DD format
+      const parts = monthText.split('-');
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      const year = parts[0];
+      previewMonthText = `${monthsArr[monthIdx]} ${year}`;
+    } else if (typeof monthText === 'string' && monthText.match(/^\d{4}-\d{2}/)) {
+      // YYYY-MM format
+      const parts = monthText.split('-');
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      const year = parts[0];
+      previewMonthText = `${monthsArr[monthIdx]} ${year}`;
+    }
+
     const tableRowsHTML = (rows) => rows.map(r => {
       const amount = (r.is_empty || r.amount === null) ? '-' : Number(r.amount).toFixed(2);
       return `<tr><td style="border:1px solid #ccc;padding:6px">${r.day_num}</td><td style="border:1px solid #ccc;padding:6px">${r.date}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">${amount}</td></tr>`;
@@ -234,7 +251,7 @@ function numberToWords(num) {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Invoice - ${customer} - ${monthText}</title>
+  <title>Invoice - ${customer} - ${previewMonthText}</title>
   <style>
     @page { size: A4; margin: 20mm; }
     body { font-family: Montserrat, Arial, sans-serif; color:#111; padding:24px; background:#fff; }
@@ -257,8 +274,8 @@ function numberToWords(num) {
     .totals strong { font-size:16px; color:#222; }
     .words { margin-top:6px; font-size:13px; color:#444; }
     .signature-section { margin-top:40px; text-align:right; }
-    .auth-label { font-size:13px; color:#555; margin-bottom:8px; }
     .signatory { font-size:15px; font-weight:700; border-top:2px solid #222; display:inline-block; padding-top:8px; margin-top:6px; }
+    .auth-label { font-size:13px; color:#555; margin-bottom:8px; }
   </style>
 </head>
 <body>
@@ -273,7 +290,7 @@ function numberToWords(num) {
     </div>
     <div>
       <div class="invoice-title">INVOICE</div>
-      <div class="invoice-date">${monthText}</div>
+      <div class="invoice-date">${previewMonthText}</div>
     </div>
   </div>
 
@@ -332,160 +349,51 @@ function numberToWords(num) {
 
 
 // Modal elements
+// Previous Bills Modal logic (rewritten)
 const previousBillsModal = document.getElementById("previousBillsModal");
 const viewPreviousBtn = document.getElementById("viewPreviousBtn");
 const closePreviousModal = document.getElementById("closePreviousModal");
 const previousBillsTableBody = document.querySelector("#previousBillsTable tbody");
 
 viewPreviousBtn.addEventListener("click", async () => {
+  previousBillsTableBody.innerHTML = "";
+  try {
     const res = await fetch("/get-invoices");
-    const invoices = await res.json();
-
-    previousBillsTableBody.innerHTML = "";
+    let invoices = await res.json();
+    // Sort by ID ascending
+    invoices = invoices.sort((a, b) => Number(a.month_id) - Number(b.month_id));
     invoices.forEach(inv => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-            <td>${inv.month_id}</td>
-            <td>${inv.customer_name}</td>
-            <td>${inv.month_year}</td>
-            <td>${inv.total_amount}</td>
-            <td><button class="print-btn" data-id="${inv.month_id}">Print</button></td>
-        `;
-        previousBillsTableBody.appendChild(row);
+      const row = document.createElement("tr");
+      // Format month_year to show correct month name and year
+      let monthText = inv.month_year;
+      const monthsArr = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      if (typeof monthText === 'string' && monthText.match(/^\d{4}-\d{2}-\d{2}/)) {
+        const parts = monthText.split('-');
+        const monthIdx = parseInt(parts[1], 10) - 1;
+        const year = parts[0];
+        monthText = `${monthsArr[monthIdx]} ${year}`;
+      } else if (typeof monthText === 'string' && monthText.match(/^\d{4}-\d{2}/)) {
+        const parts = monthText.split('-');
+        const monthIdx = parseInt(parts[1], 10) - 1;
+        const year = parts[0];
+        monthText = `${monthsArr[monthIdx]} ${year}`;
+      }
+      row.innerHTML = `
+        <td style="text-align:center;">${inv.month_id}</td>
+        <td style="text-align:center;">${inv.customer_name}</td>
+        <td style="text-align:center;">${monthText}</td>
+        <td style="text-align:center;">${inv.total_amount}</td>
+      `;
+      previousBillsTableBody.appendChild(row);
     });
-
-    // Add print event listeners
-    document.querySelectorAll(".print-btn").forEach(btn => {
-        btn.addEventListener("click", async (e) => {
-            const id = e.target.getAttribute("data-id");
-            const res = await fetch(`/get-invoice/${id}`);
-            const data = await res.json();
-            buildPrintHTML(data.invoice, data.dailyAmounts);
-        });
-    });
-
     previousBillsModal.style.display = "block";
+  } catch (err) {
+    alert('Error fetching previous invoices.');
+  }
 });
 
 closePreviousModal.addEventListener("click", () => {
-    previousBillsModal.style.display = "none";
+  previousBillsModal.style.display = "none";
 });
 
 // Print builder (reuse existing logic)
-function buildPrintHTML(invoice, dailyAmounts) {
-    // Use the same print format as the main invoice print
-    const t1Rows = dailyAmounts.filter(r => r.day_num <= 15);
-    const t2Rows = dailyAmounts.filter(r => r.day_num > 15);
-    let t1 = 0, t2 = 0;
-    dailyAmounts.forEach(r => {
-      if (r.amount !== null && r.amount !== '' && !isNaN(r.amount)) {
-        if (r.day_num <= 15) t1 += Number(r.amount); else t2 += Number(r.amount);
-      }
-    });
-    const totals = { t1, t2, grand: t1 + t2 };
-    const monthText = invoice.month_year;
-    const customer = invoice.customer_name;
-    const words = invoice.total_amount_words;
-    const printWindow = window.open("", "_blank");
-    printWindow.document.open();
-    printWindow.document.write(buildPrintHTMLTemplate({ customer, monthText, daily: dailyAmounts, totals, words }));
-    printWindow.document.close();
-    setTimeout(() => { try { printWindow.focus(); printWindow.print(); } catch (e) {} }, 600);
-}
-
-function buildPrintHTMLTemplate({ customer, monthText, daily, totals, words }) {
-    // Same as the improved invoice print preview
-    const t1Rows = daily.filter(r => r.day_num <= 15);
-    const t2Rows = daily.filter(r => r.day_num > 15);
-    const t1Sum = totals.t1.toFixed(2);
-    const t2Sum = totals.t2.toFixed(2);
-    const grand = totals.grand.toFixed(2);
-    const tableRowsHTML = (rows) => rows.map(r => {
-      const amount = (r.is_empty || r.amount === null || r.amount === '') ? '-' : Number(r.amount).toFixed(2);
-      return `<tr><td style="border:1px solid #ccc;padding:6px">${r.day_num}</td><td style="border:1px solid #ccc;padding:6px">${r.date || r.bill_date}</td><td style="border:1px solid #ccc;padding:6px;text-align:right">${amount}</td></tr>`;
-    }).join('');
-    return `
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Invoice - ${customer} - ${monthText}</title>
-  <style>
-    @page { size: A4; margin: 20mm; }
-    body { font-family: Montserrat, Arial, sans-serif; color:#111; padding:24px; background:#fff; }
-    .invoice-header { display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #eee; padding-bottom:12px; margin-bottom:18px; }
-    .logo-wrap { width:90px; height:90px; display:flex; align-items:center; justify-content:center; background:linear-gradient(180deg,#FFBF00,#ffd84d); border-radius:16px; box-shadow:0 4px 24px rgba(255,191,0,0.12); }
-    .logo-wrap img { width:70px; height:70px; object-fit:contain; border-radius:12px; }
-    .company-info { margin-left:18px; }
-    .company-info h1 { margin:0; font-size:26px; letter-spacing:1px; }
-    .muted { color:#555; font-size:13px; }
-    .invoice-title { text-align:right; font-weight:700; font-size:20px; letter-spacing:1px; }
-    .invoice-date { text-align:right; color:#888; font-size:14px; }
-    .to-section { margin:18px 0 10px 0; font-weight:600; font-size:15px; }
-    .tables { display:flex; gap:18px; justify-content:space-between; margin-top:12px; }
-    .table { width:48%; background:#fafafa; border-radius:8px; box-shadow:0 2px 8px #eee; }
-    table { width:100%; border-collapse:collapse; }
-    th,td { padding:8px; border:1px solid #ccc; font-size:13px; text-align:left; }
-    th { background:#f5f5f5; font-size:13px; }
-    .right { text-align:right; }
-    .totals { margin-top:18px; font-size:15px; }
-    .totals strong { font-size:16px; color:#222; }
-    .words { margin-top:6px; font-size:13px; color:#444; }
-    .signature-section { margin-top:40px; text-align:right; }
-    .signatory { font-size:15px; font-weight:700; border-top:2px solid #222; display:inline-block; padding-top:8px; margin-top:6px; }
-    .auth-label { font-size:13px; color:#555; margin-bottom:2px; }
-  </style>
-</head>
-<body>
-  <div class="invoice-header">
-    <div style="display:flex;align-items:center;">
-      <div class="logo-wrap"><img src="/logo.png" alt="Logo"></div>
-      <div class="company-info">
-        <h1>SHANKAR SAH</h1>
-        <div class="muted">Gamharia market complex - 832108</div>
-        <div class="muted">Contact: 8210945932 | Email: shankarvegetableshop7@gmail.com</div>
-      </div>
-    </div>
-    <div>
-      <div class="invoice-title">INVOICE</div>
-      <div class="invoice-date">${monthText}</div>
-    </div>
-  </div>
-
-  <div class="to-section">To: ${escapeHtml(customer)}</div>
-
-  <div class="tables">
-    <div class="table">
-      <table>
-        <thead><tr><th>S.no</th><th>Date</th><th>Amount</th></tr></thead>
-        <tbody>
-          ${tableRowsHTML(t1Rows)}
-        </tbody>
-        <tfoot><tr><th colspan="2">Total 1</th><th class="right">${t1Sum}</th></tr></tfoot>
-      </table>
-    </div>
-
-    <div class="table">
-      <table>
-        <thead><tr><th>S.no</th><th>Date</th><th>Amount</th></tr></thead>
-        <tbody>
-          ${tableRowsHTML(t2Rows)}
-        </tbody>
-        <tfoot><tr><th colspan="2">Total 2</th><th class="right">${t2Sum}</th></tr></tfoot>
-      </table>
-    </div>
-  </div>
-
-  <div class="totals">
-    <div>Total Amount to be Paid: <strong>${grand}</strong></div>
-    <div class="words">Total Amount in Words: <span>${escapeHtml(words || '')}</span></div>
-  </div>
-
-  <div class="signature-section">
-    <div class="signatory">SHANKAR SAH</div>
-    <div class="auth-label">Authorized Signatory</div>
-  </div>
-</body>
-</html>
-    `;
-}
